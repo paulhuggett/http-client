@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
 
 // Platform
 #include <unistd.h>
@@ -87,7 +88,7 @@ namespace {
     }
 
     // Send GET request
-    void http_get (socket_descriptor const & clientfd, char const * host, char const * port,
+    std::error_code http_get (socket_descriptor const & clientfd, char const * host, char const * port,
                    char const * path) {
         static constexpr auto crlf = "\r\n";
         std::ostringstream os;
@@ -95,27 +96,36 @@ namespace {
            << "Host: " << host << ':' << port << crlf //
            << crlf;
         auto const & str = os.str ();
-        ::send (clientfd.native_handle (), str.data (), str.length (), 0);
+        if (::send (clientfd.native_handle (), str.data (), str.length (), 0) < 0) {
+            return {errno, std::generic_category ()};
+        }
+        return {};
     }
 
 
     template <typename BufferedReader>
     error_or<socket_descriptor> read_reply (BufferedReader & reader, socket_descriptor & io2,
-                                            http::header_info const & /*header_contents*/) {
+                                            http::header_info const & /*header_contents*/, long content_length) {
+        using return_type = error_or<socket_descriptor>;
+
         std::array<char, 256> buffer;
-        for (;;) {
-            auto get_reply = reader.get_span (io2, gsl::make_span (buffer));
+        while (content_length > 0L) {
+            auto len = std::min (content_length, static_cast<long> (buffer.size ()));
+            content_length -= len;
+
+            auto get_reply = reader.get_span (io2, gsl::make_span (buffer.data (), len));
             if (!get_reply) {
-                return error_or<socket_descriptor> (get_reply.get_error ());
+                return return_type{get_reply.get_error ()};
             }
             io2 = std::move (std::get<0> (*get_reply));
             auto const & subspan = std::get<1> (*get_reply);
             if (subspan.size () == 0) {
-                return error_or<socket_descriptor> (in_place, std::move (io2));
+                break;
             }
             std::fwrite (subspan.data (), sizeof (char), static_cast<std::size_t> (subspan.size ()),
                          stdout);
         }
+        return return_type{in_place, std::move (io2)};
     }
 
 } // end anonymous namespace
@@ -125,6 +135,8 @@ int main (int argc, char ** argv) {
         std::cerr << "USAGE: " << argv[0] << " <hostname> <port> <request path>\n";
         return EXIT_FAILURE;
     }
+
+    std::unordered_map<std::string, std::string> jar; // cookie jar.
 
     // Establish connection with <hostname>:<port>
     auto const * host = argv[1];
@@ -138,7 +150,11 @@ int main (int argc, char ** argv) {
     socket_descriptor & clientfd = *eo_socket;
 
     // Send an HTTP GET request.
-    http_get (clientfd, host, port, path);
+    std::error_code const erc = http_get (clientfd, host, port, path);
+    if (erc) {
+        std::cerr << "Failed to send: " << erc.message() << ")\n";
+        return EXIT_FAILURE;
+    }
 
     // Get the server's reply.
     auto reader = http::make_buffered_reader<socket_descriptor &> (http::net::refiller);
@@ -155,16 +171,21 @@ int main (int argc, char ** argv) {
               << request.uri () << '\n';
 
     // Scan the HTTP headers and dump the server's response.
+    auto content_length = 0L;
     PSTORE_ASSERT (clientfd.valid ());
     error_or<socket_descriptor> const err = read_headers (
         reader, std::ref (clientfd),
-        [] (http::header_info io, std::string const & key, std::string const & value) {
+        [&] (http::header_info io, std::string const & key, std::string const & value) {
             std::cout << "header: " << key << '=' << value << '\n';
+            if (key == "content-length") {
+                // TODO: more robust str->int.
+                content_length = std::max (std::stol (value), 0L);
+            }
             return io.handler (key, value);
         },
         http::header_info ()) >>=
         [&] (socket_descriptor & io2, http::header_info const & header_contents) {
-            return read_reply (reader, io2, header_contents);
+            return read_reply (reader, io2, header_contents, content_length);
         };
 
     return EXIT_SUCCESS;
