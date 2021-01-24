@@ -1,3 +1,4 @@
+// Standard library
 #include <array>
 #include <cerrno>
 #include <cstdio>
@@ -5,44 +6,65 @@
 #include <iostream>
 #include <sstream>
 
+// Platform
 #include <unistd.h>
 
 // Network
 #include <netdb.h>
 #include <sys/socket.h>
 
-//#include "descriptor.hpp"
-
-#include "pstore/os/descriptor.hpp"
+// pstore
 #include "pstore/http/buffered_reader.hpp"
+#include "pstore/http/headers.hpp"
 #include "pstore/http/net_txrx.hpp"
 #include "pstore/http/request.hpp"
-#include "pstore/http/headers.hpp"
+#include "pstore/os/descriptor.hpp"
 
 using namespace pstore;
 
 namespace {
 
+    class gai_error_category : public std::error_category {
+    public:
+        char const * name () const noexcept override {
+            return "gai error category";
+        }
+        std::string message (int error) const override {
+            return gai_strerror (error);
+        }
+    };
+
+    std::error_category const & get_gai_error_category () noexcept {
+        static gai_error_category cat;
+        return cat;
+    }
+
+    std::error_code make_gai_error_code (int const e) noexcept {
+        return {e, get_gai_error_category ()};
+    }
+
+
     // Get host information.
-    struct addrinfo * get_host_info (char const * host, char const * port) {
+    error_or<addrinfo *> get_host_info (char const * host, char const * port) {
+        using return_type = error_or<addrinfo *>;
+
         addrinfo hints;
         std::memset (&hints, 0, sizeof (hints));
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
-        addrinfo * getaddrinfo_res = nullptr;
-        if (int const r = getaddrinfo (host, port, &hints, &getaddrinfo_res)) {
-            std::cerr << "get_host_info: " << gai_strerror (r) << '\n';
-            return nullptr;
+        addrinfo * res = nullptr;
+        if (int const r = ::getaddrinfo (host, port, &hints, &res)) {
+            return return_type {make_gai_error_code (r)};
         }
-        return getaddrinfo_res;
+        return return_type{res};
     }
 
 
     // Establish connection with the host
-    socket_descriptor establish_connection (struct addrinfo * info) {
-        if (info == nullptr) {
-            return socket_descriptor{};
-        }
+    error_or<socket_descriptor> establish_connection (addrinfo * info) {
+        using return_type = error_or<socket_descriptor>;
+        assert (info != nullptr);
+        int error = 0;
 
         auto const free = [] (addrinfo * p) { ::freeaddrinfo (p); };
         std::unique_ptr<addrinfo, decltype (free)> info_ptr{info, free};
@@ -50,30 +72,32 @@ namespace {
             socket_descriptor clientfd{
                 ::socket (info->ai_family, info->ai_socktype, info->ai_protocol)};
             if (!clientfd.valid ()) {
-                perror ("socket");
+                error = errno;
                 continue;
             }
 
             if (::connect (clientfd.native_handle (), info->ai_addr, info->ai_addrlen) < 0) {
-                perror ("connect");
+                error = errno;
                 continue;
             }
-            return clientfd;
+            return return_type{std::move (clientfd)};
         }
 
-        return socket_descriptor{};
+        return return_type{std::error_code {error, std::generic_category()}};
     }
 
     // Send GET request
     void http_get (socket_descriptor const & clientfd, char const * host, char const * port,
                    char const * path) {
-        constexpr auto crlf = "\r\n";
+        static constexpr auto crlf = "\r\n";
         std::ostringstream os;
-        os << "GET " << path << " HTTP/1.0" << crlf << "Host: " << host << ':' << port << crlf
+        os << "GET " << path << " HTTP/1.0" << crlf   //
+           << "Host: " << host << ':' << port << crlf //
            << crlf;
         auto const & str = os.str ();
         ::send (clientfd.native_handle (), str.data (), str.length (), 0);
     }
+
 
     template <typename BufferedReader>
     error_or<socket_descriptor> read_reply (BufferedReader & reader, socket_descriptor & io2,
@@ -103,19 +127,20 @@ int main (int argc, char ** argv) {
     }
 
     // Establish connection with <hostname>:<port>
-    auto * host = argv[1];
-    auto * port = argv[2];
-    auto * path = argv[3];
-    socket_descriptor clientfd{establish_connection (get_host_info (host, port))};
-    if (!clientfd.valid ()) {
-        std::cerr << "Failed to connect to: " << host << ':' << port << ' ' << path << '\n';
+    auto const * host = argv[1];
+    auto const * port = argv[2];
+    auto const * path = argv[3];
+    error_or<socket_descriptor> eo_socket = get_host_info (host, port) >>= establish_connection;
+    if (!eo_socket) {
+        std::cerr << "Failed to connect to: " << host << ':' << port << ' ' << path << " (" << eo_socket.get_error().message() << ")\n";
         return EXIT_FAILURE;
     }
+    socket_descriptor & clientfd = *eo_socket;
 
     // Send an HTTP GET request.
     http_get (clientfd, host, port, path);
 
-
+    // Get the server's reply.
     auto reader = http::make_buffered_reader<socket_descriptor &> (http::net::refiller);
     error_or_n<socket_descriptor &, http::request_info> eri =
         read_request (reader, std::ref (clientfd));
