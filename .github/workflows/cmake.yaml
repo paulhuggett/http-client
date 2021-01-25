@@ -17,7 +17,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
       with:
-        repository: 'https://github.com/SNSystems/pstore.git'
+        repository: 'SNSystems/pstore.git'
 
     - uses: actions/checkout@v2
 
