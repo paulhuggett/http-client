@@ -16,6 +16,7 @@ jobs:
       with:
         repository: 'SNSystems/pstore.git'
         path: pstore
+        ref: master
 
     - name: pstore Create Build Environment
       run: cmake -E make_directory ${{ runner.workspace }}/pstore-build
