@@ -27,12 +27,8 @@ namespace {
 
     class gai_error_category : public std::error_category {
     public:
-        char const * name () const noexcept override {
-            return "gai error category";
-        }
-        std::string message (int error) const override {
-            return gai_strerror (error);
-        }
+        char const * name () const noexcept override { return "gai error category"; }
+        std::string message (int error) const override { return gai_strerror (error); }
     };
 
     std::error_category const & get_gai_error_category () noexcept {
@@ -55,7 +51,7 @@ namespace {
         hints.ai_socktype = SOCK_STREAM;
         addrinfo * res = nullptr;
         if (int const r = ::getaddrinfo (host, port, &hints, &res)) {
-            return return_type {make_gai_error_code (r)};
+            return return_type{make_gai_error_code (r)};
         }
         return return_type{res};
     }
@@ -84,12 +80,12 @@ namespace {
             return return_type{std::move (clientfd)};
         }
 
-        return return_type{std::error_code {error, std::generic_category()}};
+        return return_type{std::error_code{error, std::generic_category ()}};
     }
 
     // Send GET request
-    std::error_code http_get (socket_descriptor const & clientfd, char const * host, char const * port,
-                   char const * path) {
+    std::error_code http_get (socket_descriptor const & clientfd, char const * host,
+                              char const * port, char const * path) {
         static constexpr auto crlf = "\r\n";
         std::ostringstream os;
         os << "GET " << path << " HTTP/1.0" << crlf   //
@@ -105,7 +101,8 @@ namespace {
 
     template <typename BufferedReader>
     error_or<socket_descriptor> read_reply (BufferedReader & reader, socket_descriptor & io2,
-                                            http::header_info const & /*header_contents*/, long content_length) {
+                                            http::header_info const & /*header_contents*/,
+                                            long content_length) {
         using return_type = error_or<socket_descriptor>;
 
         std::array<char, 256> buffer;
@@ -144,7 +141,8 @@ int main (int argc, char ** argv) {
     auto const * path = argv[3];
     error_or<socket_descriptor> eo_socket = get_host_info (host, port) >>= establish_connection;
     if (!eo_socket) {
-        std::cerr << "Failed to connect to: " << host << ':' << port << ' ' << path << " (" << eo_socket.get_error().message() << ")\n";
+        std::cerr << "Failed to connect to: " << host << ':' << port << ' ' << path << " ("
+                  << eo_socket.get_error ().message () << ")\n";
         return EXIT_FAILURE;
     }
     socket_descriptor & clientfd = *eo_socket;
@@ -152,7 +150,7 @@ int main (int argc, char ** argv) {
     // Send an HTTP GET request.
     std::error_code const erc = http_get (clientfd, host, port, path);
     if (erc) {
-        std::cerr << "Failed to send: " << erc.message() << ")\n";
+        std::cerr << "Failed to send: " << erc.message () << ")\n";
         return EXIT_FAILURE;
     }
 
