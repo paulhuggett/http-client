@@ -63,36 +63,29 @@ namespace {
         assert (info != nullptr);
         int error = 0;
 
-        auto const free = [] (addrinfo * p) { ::freeaddrinfo (p); };
-        std::unique_ptr<addrinfo, decltype (free)> info_ptr{info, free};
+        std::unique_ptr<addrinfo, decltype (&freeaddrinfo)> info_ptr{info, &freeaddrinfo};
         for (; info != nullptr; info = info->ai_next) {
             socket_descriptor clientfd{
                 ::socket (info->ai_family, info->ai_socktype, info->ai_protocol)};
-            if (!clientfd.valid ()) {
-                error = errno;
-                continue;
+            if (clientfd.valid () &&
+                ::connect (clientfd.native_handle (), info->ai_addr, info->ai_addrlen) == 0) {
+                return return_type{std::move (clientfd)};
             }
-
-            if (::connect (clientfd.native_handle (), info->ai_addr, info->ai_addrlen) < 0) {
-                error = errno;
-                continue;
-            }
-            return return_type{std::move (clientfd)};
+            error = errno;
         }
-
-        return return_type{std::error_code{error, std::generic_category ()}};
+        return return_type{make_error_code (errno_erc{error})};
     }
 
     // Send GET request
-    std::error_code http_get (socket_descriptor const & clientfd, char const * host,
-                              char const * port, char const * path) {
+    std::error_code http_get (socket_descriptor const & fd, char const * host, char const * port,
+                              char const * path) {
         static constexpr auto crlf = "\r\n";
         std::ostringstream os;
-        os << "GET " << path << " HTTP/1.0" << crlf   //
+        os << "GET " << path << " HTTP/1.1" << crlf   //
            << "Host: " << host << ':' << port << crlf //
            << crlf;
         auto const & str = os.str ();
-        if (::send (clientfd.native_handle (), str.data (), str.length (), 0) < 0) {
+        if (::send (fd.native_handle (), str.data (), str.length (), 0) < 0) {
             return {errno, std::generic_category ()};
         }
         return {};
@@ -166,7 +159,7 @@ int main (int argc, char ** argv) {
     clientfd = std::move (std::get<0> (*eri));
     auto const & request = std::get<http::request_info> (*eri);
     std::cout << "request: " << request.method () << ' ' << request.version () << ' '
-              << request.uri () << '\n';
+              << "error:" << request.uri () << '\n';
 
     // Scan the HTTP headers and dump the server's response.
     auto content_length = 0L;
