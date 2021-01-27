@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Install xmllint
+    - name: Install ninja
       run: sudo apt-get install ninja-build
 
     - name: pstore Checkout
