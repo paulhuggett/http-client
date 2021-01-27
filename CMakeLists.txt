@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.19)
+cmake_minimum_required (VERSION 3.17)
 project (http-client CXX)
 
 include (${CMAKE_INSTALL_PREFIX}/lib/pstore/pstore.cmake)
