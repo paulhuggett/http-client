@@ -5,6 +5,7 @@ on: [push]
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
+  install_dir: install
 
 jobs:
   build:
@@ -19,14 +20,17 @@ jobs:
         ref: master
 
     - name: pstore Create Build Environment
-      run: cmake -E make_directory ${{ runner.workspace }}/pstore-build
+      run: |
+        cmake -D CMAKE_INSTALL_PREFIX=${{ runner.workspace }}/${{ env.install_dir }} \
+              -E make_directory \
+              ${{ runner.workspace }}/pstore-build
 
     - name: pstore Configure
       shell: bash
       working-directory: ${{ runner.workspace }}/pstore-build
       run: |
         cmake $GITHUB_WORKSPACE/pstore \
-              -G "Unix Makefiles" \
+              -G "Unix Makefiles"      \
               -DCMAKE_BUILD_TYPE=Release
 
     - name: pstore Build
@@ -45,9 +49,12 @@ jobs:
         path: http-client
 
     - name: http-client Create Build Environment
-      run: cmake -E make_directory ${{github.workspace}}/build
+      run: |
+        cmake -D CMAKE_INSTALL_PREFIX=${{ runner.workspace }}/${{ env.install_dir }} \
+              -E make_directory \
+              ${{github.workspace}}/build
 
-    - name: Configure CMake
+    - name: http-client Configure
       # Use a bash shell so we can use the same syntax for environment variable
       # access regardless of the host operating system
       shell: bash
