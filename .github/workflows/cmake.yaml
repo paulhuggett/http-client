@@ -12,7 +12,7 @@ jobs:
 
     steps:
     - name: Install xmllint
-      run: sudo ninja-build
+      run: sudo apt-get install ninja-build
 
     - name: pstore Checkout
       uses: actions/checkout@v2
