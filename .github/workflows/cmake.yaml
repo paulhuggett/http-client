@@ -5,13 +5,15 @@ on: [push]
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
-  install_dir: install
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install xmllint
+      run: sudo ninja-build
+
     - name: pstore Checkout
       uses: actions/checkout@v2
       with:
@@ -21,17 +23,13 @@ jobs:
 
     - name: pstore Create Build Environment
       run: |
-        cmake -D CMAKE_INSTALL_PREFIX=${{ runner.workspace }}/${{ env.install_dir }} \
-              -E make_directory \
-              ${{ runner.workspace }}/pstore-build
+        cmake -E make_directory ${{ runner.workspace }}/pstore-build
 
     - name: pstore Configure
       shell: bash
       working-directory: ${{ runner.workspace }}/pstore-build
       run: |
-        cmake $GITHUB_WORKSPACE/pstore \
-              -G "Unix Makefiles"      \
-              -DCMAKE_BUILD_TYPE=Release
+        cmake -D CMAKE_BUILD_TYPE=Release -G Ninja $GITHUB_WORKSPACE/pstore
 
     - name: pstore Build
       working-directory: ${{ runner.workspace }}/pstore-build
@@ -41,7 +39,7 @@ jobs:
     - name: pstore Install
       working-directory: ${{ runner.workspace }}/pstore-build
       shell: bash
-      run: cmake --install .
+      run: sudo cmake --install .
 
     - name: http-client Checkout
       uses: actions/checkout@v2
@@ -50,23 +48,18 @@ jobs:
 
     - name: http-client Create Build Environment
       run: |
-        cmake -D CMAKE_INSTALL_PREFIX=${{ runner.workspace }}/${{ env.install_dir }} \
-              -E make_directory \
-              ${{github.workspace}}/build
+        cmake -E make_directory ${{github.workspace}}/build
 
     - name: http-client Configure
-      # Use a bash shell so we can use the same syntax for environment variable
-      # access regardless of the host operating system
       shell: bash
       working-directory: ${{github.workspace}}/build
       # Note the current convention is to use the -S and -B options here to specify source 
       # and build directories, but this is only available with CMake 3.13 and higher.  
       # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
       run: |
-        cmake $GITHUB_WORKSPACE/http-client \
-              -DCMAKE_BUILD_TYPE=$BUILD_TYPE
+        cmake -D CMAKE_BUILD_TYPE=$BUILD_TYPE -G Ninja $GITHUB_WORKSPACE/http-client
 
-    - name: Build
+    - name: http-client Build
       working-directory: ${{github.workspace}}/build
       shell: bash
       # Execute the build.  You can specify a specific target with "--target <NAME>"
