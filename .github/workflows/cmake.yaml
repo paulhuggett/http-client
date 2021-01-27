@@ -34,6 +34,11 @@ jobs:
       shell: bash
       run: cmake --build . --config Release
 
+    - name: pstore Install
+      working-directory: ${{ runner.workspace }}/pstore-build
+      shell: bash
+      run: cmake --install .
+
     - name: http-client Checkout
       uses: actions/checkout@v2
       with:
