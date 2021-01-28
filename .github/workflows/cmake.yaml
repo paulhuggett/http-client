@@ -70,6 +70,5 @@ jobs:
       shell: bash
       run: |
         pstore-brokerd &
-        ${{github.sorkspace}}/build/http-client localhost 8080 /index.html
+        ${{github.workspace}}/build/http-client localhost 8080 /index.html
         kill %1
-
