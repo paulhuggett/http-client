@@ -64,3 +64,12 @@ jobs:
       shell: bash
       # Execute the build.  You can specify a specific target with "--target <NAME>"
       run: cmake --build . --config $BUILD_TYPE
+
+    - name: http-client Run
+      working-directory: ${{github.workspace}}/build
+      shell: bash
+      run: |
+        pstore-brokerd &
+        ${{github.sorkspace}}/build/http-client localhost 8080 /index.html
+        kill %1
+
