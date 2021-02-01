@@ -43,7 +43,7 @@ async function startHttpClient (port) {
     let output = ''
     const record = (data) => { output += data }
 
-    const client = spawn('./build_mac/http-client', ['localhost', port, '/index.html'])
+    const client = spawn('./build/http-client', ['localhost', port, '/index.html'])
     logOutput(client, 'http-client')
     client.stdout.on('data', record)
     client.stderr.on('data', record)
