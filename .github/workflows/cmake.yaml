@@ -68,5 +68,5 @@ jobs:
     - name: http-client Run
       working-directory: ${{github.workspace}}
       shell: bash
-      run: ./test.js
+      run: $GITHUB_WORKSPACE/http-client/test.js
 
