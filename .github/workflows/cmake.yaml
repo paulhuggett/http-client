@@ -66,9 +66,7 @@ jobs:
       run: cmake --build . --config $BUILD_TYPE
 
     - name: http-client Run
-      working-directory: ${{github.workspace}}/build
+      working-directory: ${{github.workspace}}
       shell: bash
-      run: |
-        pstore-brokerd &
-        ${{github.workspace}}/build/http-client localhost 8080 /index.html
-        kill %1
+      run: ./test.js
+
