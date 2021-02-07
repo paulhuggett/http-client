@@ -8,89 +8,123 @@ function logOutput (process, name) {
   process.stderr.on('data', (data) => console.log(`(${name}) stderr: ${data}`))
 }
 
-async function startBroker () {
-  return new Promise((resolve, reject) => {
-    const broker = spawn('pstore-brokerd', ['--http-port=0', '--announce-http-port'])
-    logOutput(broker, 'broker')
-
-    const removeListeners = () => {
-      broker.stdout.off('data', dataHandler)
-      broker.off('exit', exitHandler)
-      broker.off('error', errorHandler)
-    }
-    const dataHandler = (data) => {
-      const match = /HTTP listening on port ([0-9]+)/.exec(data)
-      if (match !== null) {
-        const port = parseInt(match[1], 10)
-        console.log(`(broker) port: ${port}`)
-        broker.stdout.off('data', dataHandler)
-        resolve([broker, port])
-      }
-    }
-    const errorHandler = (err) => {
-      console.error(`(broker) ${err}`)
-      removeListeners()
-      reject(err)
-    }
-    const exitHandler = (code) => errorHandler(new Error(`exited ${code}`))
-    broker.stdout.on('data', dataHandler)
-    broker.on('exit', exitHandler).on('error', errorHandler)
-  })
-}
+const timeout = 2 * 60 * 1000
 
 async function startHttpClient (port) {
   return new Promise((resolve, reject) => {
-    let output = ''
-    const record = (data) => { output += data }
-
     const client = spawn('./build/http-client', ['localhost', port, '/index.html'])
     logOutput(client, 'http-client')
+
+    let output = ''
+    const record = (data) => { output += data }
     client.stdout.on('data', record)
     client.stderr.on('data', record)
-    client.on('exit', (code) => {
-      console.log(`(http-client) child process exited with code ${code}`)
-      resolve([output, code])
-    })
-    client.on('error', (err) => {
-      console.error(`(http-client) error: ${err}`)
-      reject(err)
-    })
+    client
+      .on('exit', (code) => {
+        console.log(`(http-client) child process exited with code ${code}`)
+        resolve([output, code])
+      })
+      .on('error', (err) => {
+        console.error(`(http-client) error: ${err}`)
+        reject(err)
+      })
   })
 }
 
-async function stopBroker (broker) {
-  console.log('stopping the broker')
-  return new Promise((resolve, reject) => {
-    broker.on('exit', (code) => {
-      resolve(code)
+function startBroker () {
+  let exitCode
+  const broker = spawn('pstore-brokerd', ['--http-port=0', '--announce-http-port'])
+  logOutput(broker, 'broker')
+
+  const errorHandler = (reject, err) => {
+    console.error(`(broker) ${err}`)
+    reject(err)
+  }
+
+  const timerId = setTimeout(() => {
+    console.error('(broker) timeout')
+    stopBroker().then(() => { throw new Error('test timeout') })
+  }, timeout)
+
+  const readyExitHandler = function (resolve, reject, code) {
+    exitCode = code
+    clearTimeout(timerId)
+    errorHandler(reject, new Error(`exited ${code}`))
+  }
+  const stopBroker = async function () {
+    if (exitCode !== undefined) {
+      return Promise.resolved(exitCode)
+    }
+    return new Promise((resolve, reject) => {
+      // Up until now, the broker exiting would be an error. It's not something
+      // that we expect or want to happen. However, once we've sent the kill
+      // signal to the process this becomes the normal flow of events. Replace
+      // the 'exit' event handler to reflect this.
+      broker.removeAllListeners('exit')
+      broker.on('exit', (code) => {
+        exitCode = code
+        clearTimeout(timerId)
+        resolve(code)
+      })
+      // We must also reset the error handler so that if it rejects this promise.
+      broker.removeAllListeners('error')
+      broker.on('error', (err) => errorHandler(reject, err))
+      // Tell the broker to exit.
+      broker.kill()
     })
-    broker.on('error', (err) => {
-      console.error(`(broker) error: ${err}`)
-      reject(err)
-    })
-    broker.kill()
-  })
+  }
+
+  return {
+    // Returns a promise which will be resolved when the broker's HTTP server
+    // is listening.
+    ready: async function () {
+      return new Promise((resolve, reject) => {
+        const dataHandler = (data) => {
+          const match = /HTTP listening on port ([0-9]+)/.exec(data)
+          if (match !== null) {
+            const port = parseInt(match[1], 10)
+            console.log(`(broker) port: ${port}`)
+            broker.stdout.off('data', dataHandler)
+            resolve(port)
+          }
+        }
+        broker.stdout.on('data', dataHandler)
+        broker
+          .on('exit', (code) => readyExitHandler(resolve, reject, code))
+          .on('error', (err) => errorHandler(reject, err))
+      })
+    },
+    // Returns a promise which is resolved with the broker's exit code.
+    stop: stopBroker
+  }
 }
 
 async function main () {
-  const [broker, port] = await startBroker()
-  const [response, clientExitCode] = await startHttpClient(port)
-  const brokerExitCode = await stopBroker(broker)
-  console.log(`(broker) exit code ${brokerExitCode}`)
-
-  if (clientExitCode !== 0) {
-    throw new Error(`http-client exit code ${clientExitCode}`)
+  try {
+    const broker = startBroker()
+    const port = await broker.ready()
+    console.log(`port is ${port}`)
+    // Run the http-client and get its output.
+    const [response, clientExitCode] = await startHttpClient(port)
+    // Tell the broker to exit and wait for it to do so.
+    const brokerExitCode = await broker.stop()
+    console.log(`broker exit code=${brokerExitCode}`)
+    // Check the results.
+    if (clientExitCode !== 0) {
+      throw new Error(`http-client exit code ${clientExitCode}`)
+    }
+    if (![/<!DOCTYPE html>/, /<p>Hello from the pstore HTTP server!<\/p>/, /<\/html>/].every((value) => value.exec(response))) {
+      throw new Error('Required content missing from response')
+    }
+  } catch (err) {
+    console.error(err)
+    return false
   }
-  if ([/<!DOCTYPE html>/, /<p>Hello from the pstore HTTP server!<\/p>/, /<\/html>/].every((value) => value.exec(response))) {
-    throw new Error('Required content missing from response ')
-  }
+  return true
 }
 
 if (require.main === module) {
-  try {
-    main()
-  } catch (err) {
-    console.error(err)
+  if (!main()) {
     process.exit(1)
   }
 }
