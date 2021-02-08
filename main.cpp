@@ -1,10 +1,12 @@
 // Standard library
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <unordered_map>
 
@@ -21,6 +23,7 @@
 #include "pstore/http/net_txrx.hpp"
 #include "pstore/http/request.hpp"
 #include "pstore/os/descriptor.hpp"
+#include "pstore/support/base64.hpp"
 
 using namespace pstore;
 
@@ -43,7 +46,7 @@ namespace {
 
 
     // Get host information.
-    error_or<addrinfo *> get_host_info (char const * host, char const * port) {
+    error_or<addrinfo *> get_host_info (std::string const & host, std::string const & port) {
         using return_type = error_or<addrinfo *>;
 
         addrinfo hints;
@@ -51,12 +54,30 @@ namespace {
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
         addrinfo * res = nullptr;
-        if (int const r = ::getaddrinfo (host, port, &hints, &res)) {
+        if (int const r = ::getaddrinfo (host.c_str (), port.c_str (), &hints, &res)) {
             return return_type{make_gai_error_code (r)};
         }
         return return_type{res};
     }
 
+    // request key
+    // ~~~~~~~~~~~
+    // The value of the Sec-WebSocket-Key header field MUST be a
+    // nonce consisting of a randomly selected 16-byte value that has
+    // been base64-encoded (see Section 4 of [RFC4648]). The nonce
+    // MUST be selected randomly for each connection.
+
+    std::string request_key () {
+        static std::random_device rd;
+        static std::default_random_engine dre{rd ()};
+        static std::uniform_int_distribution<int> uid{std::numeric_limits<std::uint8_t>::min (), std::numeric_limits<std::uint8_t>::max ()};
+
+        std::array<std::uint8_t, 16> nonce;
+        std::generate (std::begin (nonce), std::end (nonce), [&] () { return uid (dre); });
+        std::string result;
+        to_base64 (std::begin (nonce), std::end (nonce), std::back_inserter (result));
+        return result;
+    }
 
     // Establish connection with the host
     error_or<socket_descriptor> establish_connection (addrinfo * info) {
@@ -77,19 +98,45 @@ namespace {
         return return_type{make_error_code (errno_erc{error})};
     }
 
+    using header_map = std::unordered_map<std::string, std::string>;
+
     // Send GET request
-    std::error_code http_get (socket_descriptor const & fd, char const * host, char const * port,
-                              char const * path) {
+    std::error_code http_get (socket_descriptor const & fd, std::string const & path,
+                              header_map const & headers) {
+        std::string const ws_key = request_key ();
         static constexpr auto crlf = "\r\n";
         std::ostringstream os;
-        os << "GET " << path << " HTTP/1.1" << crlf   //
-           << "Host: " << host << ':' << port << crlf //
-           << crlf;
+        os << "GET " << path << " HTTP/1.1" << crlf;
+        for (auto const & kvp : headers) {
+            os << kvp.first << ':' << kvp.second << crlf;
+        }
+        os << crlf;
+
         auto const & str = os.str ();
         if (::send (fd.native_handle (), str.data (), str.length (), 0) < 0) {
             return {errno, std::generic_category ()};
         }
         return {};
+    }
+
+    std::error_code http_get (socket_descriptor const & fd, std::string const & host,
+                              std::string const & port, std::string const & path) {
+        header_map headers;
+        headers["Host"] = std::string{host} + ":" + std::string{port};
+        return http_get (fd, path, headers);
+    }
+
+    // Initiate a WebSocket connection upgrade.
+    std::error_code http_ws_get (socket_descriptor const & fd, std::string const & host,
+                                 std::string const & port, std::string const & path,
+                                 std::string const & ws_key) {
+        header_map headers;
+        headers["Host"] = host + ":" + port;
+        headers["Upgrade"] = "websocket";
+        headers["Connection"] = "Upgrade";
+        headers["Sec-WebSocket-Key"] = ws_key;
+        headers["Sec-WebSocket-Version"] = "13";
+        return http_get (fd, path, headers);
     }
 
 
@@ -119,6 +166,16 @@ namespace {
         return return_type{in_place, std::move (io2)};
     }
 
+    long content_length (std::unordered_map<std::string, std::string> const & headers) {
+        auto cl = 0L;
+        auto const pos = headers.find ("content-length");
+        if (pos != std::end (headers)) {
+            // TODO: a more robust string to long.
+            cl = std::max (std::stol (pos->second), 0L);
+        }
+        return cl;
+    }
+
 } // end anonymous namespace
 
 int main (int argc, char ** argv) {
@@ -130,9 +187,9 @@ int main (int argc, char ** argv) {
     std::unordered_map<std::string, std::string> jar; // cookie jar.
 
     // Establish connection with <hostname>:<port>
-    auto const * host = argv[1];
-    auto const * port = argv[2];
-    auto const * path = argv[3];
+    auto const host = std::string{argv[1]};
+    auto const port = std::string{argv[2]};
+    auto const path = std::string{argv[3]};
     error_or<socket_descriptor> eo_socket = get_host_info (host, port) >>= establish_connection;
     if (!eo_socket) {
         std::cerr << "Failed to connect to: " << host << ':' << port << ' ' << path << " ("
@@ -142,7 +199,9 @@ int main (int argc, char ** argv) {
     socket_descriptor & clientfd = *eo_socket;
 
     // Send an HTTP GET request.
-    std::error_code const erc = http_get (clientfd, host, port, path);
+    // std::error_code const erc = http_get (clientfd, host, port, path);
+    std::string const ws_key = request_key ();
+    std::error_code const erc = http_ws_get (clientfd, host, port, path, ws_key);
     if (erc) {
         std::cerr << "Failed to send: " << erc.message () << ")\n";
         return EXIT_FAILURE;
@@ -163,21 +222,19 @@ int main (int argc, char ** argv) {
               << "error:" << request.uri () << '\n';
 
     // Scan the HTTP headers and dump the server's response.
-    auto content_length = 0L;
+
     PSTORE_ASSERT (clientfd.valid ());
+    std::unordered_map<std::string, std::string> headers;
     error_or<socket_descriptor> const err = read_headers (
         reader, std::ref (clientfd),
         [&] (http::header_info io, std::string const & key, std::string const & value) {
             std::cout << "header: " << key << '=' << value << '\n';
-            if (key == "content-length") {
-                // TODO: more robust str->int.
-                content_length = std::max (std::stol (value), 0L);
-            }
+            headers[key] = value;
             return io.handler (key, value);
         },
         http::header_info ()) >>=
         [&] (socket_descriptor & io2, http::header_info const & header_contents) {
-            return read_reply (reader, io2, header_contents, content_length);
+            return read_reply (reader, io2, header_contents, content_length (headers));
         };
 
     return EXIT_SUCCESS;
