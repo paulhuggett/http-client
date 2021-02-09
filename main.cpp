@@ -1,4 +1,6 @@
 // Standard library
+#include <cassert>
+#include <cstring>
 #include <iostream>
 
 // Platform
