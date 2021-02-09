@@ -7,5 +7,6 @@
 node_modules
 
 # Build directories created by make_build.py
+build
 build_*
 
