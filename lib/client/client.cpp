@@ -1,5 +1,7 @@
 #include "client/client.hpp"
 
+#include <cassert>
+#include <cstring>
 #include <random>
 
 #include "pstore/support/base64.hpp"
