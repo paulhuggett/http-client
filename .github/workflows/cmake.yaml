@@ -65,8 +65,12 @@ jobs:
       # Execute the build.  You can specify a specific target with "--target <NAME>"
       run: cmake --build . --config $BUILD_TYPE
 
-    - name: http-client Run
+    - name: Get Test
       working-directory: ${{github.workspace}}
       shell: bash
       run: $GITHUB_WORKSPACE/http-client/test_get.js
 
+    - name: WS Test
+      working-directory: ${{github.workspace}}
+      shell: bash
+      run: $GITHUB_WORKSPACE/http-client/test_ws.js

@@ -42,12 +42,9 @@ int main (int argc, char ** argv) {
     socket_descriptor & clientfd = *eo_socket;
 
     // Send an HTTP GET request.
-#if 0
-    std::string const ws_key = request_key ();
+
+    std::string const ws_key = client::request_key ();
     std::error_code const erc = client::http_ws_get (clientfd, host, port, path, ws_key);
-#else
-    std::error_code const erc = client::http_get (clientfd, host, port, path);
-#endif
     if (erc) {
         std::cerr << "Failed to send: " << erc.message () << ")\n";
         return EXIT_FAILURE;
