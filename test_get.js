@@ -12,7 +12,7 @@ const timeout = 2 * 60 * 1000
 
 async function startHttpClient (port) {
   return new Promise((resolve, reject) => {
-    const client = spawn('./build/http-client', ['localhost', port, '/index.html'])
+    const client = spawn('./build/get', ['localhost', port, '/index.html'])
     logOutput(client, 'http-client')
 
     let output = ''
