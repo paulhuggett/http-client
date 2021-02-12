@@ -20,6 +20,79 @@
 
 using namespace pstore;
 
+namespace pstore {
+    namespace http {
+
+        class status_line {
+        public:
+            status_line (std::string && v, std::string && sc, std::string && rp) noexcept
+                    : http_version_{std::move (v)}
+                    , status_code_{std::move (sc)}
+                    , reason_phrase_{std::move (rp)} {}
+            status_line (status_line const &) = default;
+            status_line (status_line &&) noexcept = default;
+
+            ~status_line () noexcept = default;
+
+            status_line & operator= (status_line const &) = delete;
+            status_line & operator= (status_line &&) noexcept = delete;
+
+            std::string const & http_version () const { return http_version_; }
+            std::string const & status_code () const noexcept { return status_code_; }
+            std::string const & reason_phrase () const noexcept { return reason_phrase_; }
+
+        private:
+            std::string http_version_;
+            std::string status_code_;
+            std::string reason_phrase_;
+        };
+
+        // read status line
+        // ~~~~~~~~~~~~~~~~
+        /// \tparam Reader  The buffered_reader<> type from which data is to be read.
+        /// \param reader  An instance of Reader: a buffered_reader<> from which data is read,
+        /// \param io  The state passed to the reader's refill function.
+        /// \returns  Type error_or_n<Reader::state_type, status_line>. Either an error or the
+        /// updated reader state value and an instance of status_line containing the HTTP version,
+        /// status code and reason phrase.
+        template <typename Reader>
+        error_or_n<typename Reader::state_type, status_line>
+        read_status_line (Reader & reader, typename Reader::state_type io) {
+            using state_type = typename Reader::state_type;
+
+            auto check_for_eof = [] (state_type io2, maybe<std::string> const & buf) {
+                using result_type = error_or_n<state_type, std::string>;
+                if (!buf) {
+                    return result_type{details::out_of_data_error ()};
+                }
+                return result_type{in_place, io2, *buf};
+            };
+
+            auto extract_status_line = [] (state_type io3, std::string const & s) {
+                using result_type = error_or_n<state_type, status_line>;
+
+                std::istringstream is{s};
+                std::string http_version;
+                std::string status_code;
+                std::string reason_phrase;
+
+                is >> http_version >> status_code >> reason_phrase;
+                if (http_version.length () == 0 || status_code.length () == 0 ||
+                    reason_phrase.length () == 0) {
+                    return result_type{details::out_of_data_error ()};
+                }
+                return result_type{in_place, io3,
+                                   status_line{std::move (http_version), std::move (status_code),
+                                               std::move (reason_phrase)}};
+            };
+
+            return (reader.gets (io) >>= check_for_eof) >>= extract_status_line;
+        }
+
+    } // end namespace http
+} // end namespace pstore
+
+
 int main (int argc, char ** argv) {
     if (argc != 4) {
         std::cerr << "USAGE: " << argv[0] << " <hostname> <port> <request path>\n";
@@ -53,17 +126,18 @@ int main (int argc, char ** argv) {
     // Get the server's reply.
     auto reader = pstore::http::make_buffered_reader<pstore::socket_descriptor &> (
         pstore::http::net::refiller);
-    pstore::error_or_n<pstore::socket_descriptor &, pstore::http::request_info> eri =
-        read_request (reader, std::ref (clientfd));
+    pstore::error_or_n<pstore::socket_descriptor &, pstore::http::status_line> eri =
+        read_status_line (reader, std::ref (clientfd));
     if (!eri) {
         std::cerr << "Failed to read: " << eri.get_error ().message () << '\n';
         return EXIT_FAILURE;
     }
 
     clientfd = std::move (std::get<0> (*eri));
-    auto const & request = std::get<http::request_info> (*eri);
-    std::cout << "request: " << request.method () << ' ' << request.version () << ' '
-              << "error:" << request.uri () << '\n';
+    auto const & request = std::get<http::status_line> (*eri);
+    std::cout << "http-version: " << request.http_version () << '\n'
+              << "status-code: " << request.status_code () << '\n'
+              << "reason-phrase: " << request.reason_phrase () << '\n';
 
     // Scan the HTTP headers and dump the server's response.
 
