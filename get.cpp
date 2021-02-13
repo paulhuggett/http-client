@@ -32,8 +32,8 @@ int main (int argc, char ** argv) {
     auto const host = std::string{argv[1]};
     auto const port = std::string{argv[2]};
     auto const path = std::string{argv[3]};
-    error_or<socket_descriptor> eo_socket = client::get_host_info (host, port) >>=
-        client::establish_connection;
+    error_or<socket_descriptor> eo_socket = http::get_host_info (host, port) >>=
+        http::establish_connection;
     if (!eo_socket) {
         std::cerr << "Failed to connect to: " << host << ':' << port << ' ' << path << " ("
                   << eo_socket.get_error ().message () << ")\n";
@@ -42,12 +42,7 @@ int main (int argc, char ** argv) {
     socket_descriptor & clientfd = *eo_socket;
 
     // Send an HTTP GET request.
-#if 0
-    std::string const ws_key = request_key ();
-    std::error_code const erc = client::http_ws_get (clientfd, host, port, path, ws_key);
-#else
-    std::error_code const erc = client::http_get (clientfd, host, port, path);
-#endif
+    std::error_code const erc = http::http_get (clientfd, host, port, path);
     if (erc) {
         std::cerr << "Failed to send: " << erc.message () << ")\n";
         return EXIT_FAILURE;
@@ -79,10 +74,10 @@ int main (int argc, char ** argv) {
             headers[key] = value;
             return io.handler (key, value);
         },
-        http::header_info ()) >>= [&] (socket_descriptor & io2,
-                                       http::header_info const & header_contents) {
-        return client::read_reply (reader, io2, header_contents, client::content_length (headers));
-    };
+        http::header_info ()) >>=
+        [&] (socket_descriptor & io2, http::header_info const & header_contents) {
+            return http::read_reply (reader, io2, header_contents, http::content_length (headers));
+        };
 
     return EXIT_SUCCESS;
 }
