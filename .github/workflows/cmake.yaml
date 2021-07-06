@@ -30,7 +30,7 @@ jobs:
       run: |
         cmake -D CMAKE_BUILD_TYPE=Release       \
               -G Ninja                          \
-              -S ${{ runner.workspace }}/pstore \
+              -S ${{ github.workspace }}/pstore \
               -B ${{ runner.workspace }}/pstore-build
 
     - name: pstore Build
