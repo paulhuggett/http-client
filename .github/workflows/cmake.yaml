@@ -27,9 +27,11 @@ jobs:
 
     - name: pstore Configure
       shell: bash
-      working-directory: ${{ runner.workspace }}/pstore-build
       run: |
-        cmake -D CMAKE_BUILD_TYPE=Release -G Ninja $GITHUB_WORKSPACE/pstore
+        cmake -D CMAKE_BUILD_TYPE=Release \
+              -G Ninja                    \
+              -S $GITHUB_WORKSPACE/pstore \
+              -B $GITHUB_WORKSPACE/pstore-build
 
     - name: pstore Build
       working-directory: ${{ runner.workspace }}/pstore-build
@@ -52,12 +54,11 @@ jobs:
 
     - name: http-client Configure
       shell: bash
-      working-directory: ${{github.workspace}}/build
-      # Note the current convention is to use the -S and -B options here to specify source 
-      # and build directories, but this is only available with CMake 3.13 and higher.  
-      # The CMake binaries on the Github Actions machines are (as of this writing) 3.12
       run: |
-        cmake -D CMAKE_BUILD_TYPE=$BUILD_TYPE -G Ninja $GITHUB_WORKSPACE/http-client
+        cmake -D CMAKE_BUILD_TYPE=$BUILD_TYPE  \
+              -G Ninja                         \
+              -S $GITHUB_WORKSPACE/http-client \
+              -B $GITHUB_WORKSPACE/build
 
     - name: http-client Build
       working-directory: ${{github.workspace}}/build
