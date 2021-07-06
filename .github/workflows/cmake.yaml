@@ -28,10 +28,10 @@ jobs:
     - name: pstore Configure
       shell: bash
       run: |
-        cmake -D CMAKE_BUILD_TYPE=Release \
-              -G Ninja                    \
-              -S $GITHUB_WORKSPACE/pstore \
-              -B $GITHUB_WORKSPACE/pstore-build
+        cmake -D CMAKE_BUILD_TYPE=Release       \
+              -G Ninja                          \
+              -S ${{ runner.workspace }}/pstore \
+              -B ${{ runner.workspace }}/pstore-build
 
     - name: pstore Build
       working-directory: ${{ runner.workspace }}/pstore-build
