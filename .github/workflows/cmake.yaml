@@ -17,9 +17,9 @@ jobs:
     - name: pstore Checkout
       uses: actions/checkout@v2
       with:
-        repository: 'SNSystems/pstore.git'
+        repository: 'paulhuggett/pstore.git'
         path: pstore
-        ref: master
+        ref: main
 
     - name: pstore Create Build Environment
       run: |
