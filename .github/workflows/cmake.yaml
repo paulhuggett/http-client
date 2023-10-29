@@ -20,6 +20,7 @@ jobs:
         repository: 'paulhuggett/pstore.git'
         path: pstore
         ref: main
+        submodules: true
 
     - name: pstore Create Build Environment
       run: |
