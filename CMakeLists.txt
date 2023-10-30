@@ -1,6 +1,7 @@
 cmake_minimum_required (VERSION 3.16)
 project (http-client CXX)
 
+include (${CMAKE_INSTALL_PREFIX}/lib/peejay/peejay.cmake)
 include (${CMAKE_INSTALL_PREFIX}/lib/pstore/pstore.cmake)
 
 set (client_root "${CMAKE_CURRENT_SOURCE_DIR}")
