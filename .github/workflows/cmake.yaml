@@ -12,10 +12,12 @@ jobs:
 
     steps:
     - name: Install ninja
-      run: sudo apt-get install ninja-build
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build
 
     - name: pstore Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         repository: 'paulhuggett/pstore.git'
         path: pstore
@@ -42,7 +44,9 @@ jobs:
     - name: pstore Install
       working-directory: ${{ runner.workspace }}/pstore-build
       shell: bash
-      run: sudo cmake --install .
+      run: |
+        sudo cmake --install . --component peejay
+        sudo cmake --install .
 
     - name: http-client Checkout
       uses: actions/checkout@v2
