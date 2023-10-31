@@ -27,7 +27,7 @@ function (client_add_executable)
     target_link_libraries (${target} PUBLIC client)
 
     set_target_properties (${target} PROPERTIES
-        CXX_STANDARD 14
+        CXX_STANDARD 17
         CXX_STANDARD_REQUIRED Yes
         )
 
