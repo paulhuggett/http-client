@@ -28,9 +28,9 @@ function (client_add_executable)
     target_link_libraries (${target} PUBLIC client)
 
     set_target_properties (${target} PROPERTIES
-        CXX_STANDARD 17
-        CXX_STANDARD_REQUIRED Yes
-        )
+      CXX_STANDARD 17
+      CXX_STANDARD_REQUIRED Yes
+    )
 
     if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         target_compile_options (${target} PRIVATE

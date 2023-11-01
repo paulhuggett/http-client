@@ -4,7 +4,7 @@ add_library (client STATIC
 )
 target_include_directories (client PUBLIC "${client_root}/include")
 set_target_properties (client PROPERTIES
-    CXX_STANDARD 14
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED Yes
 )
 target_link_libraries (client PUBLIC pstore::pstore-http)

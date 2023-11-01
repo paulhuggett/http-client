@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <sstream>
 #include <system_error>
+#include <utility>
 
 #include <netdb.h>
 
@@ -142,7 +143,7 @@ namespace pstore {
                 if (!buf) {
                     return result_type{details::out_of_data_error ()};
                 }
-                return result_type{in_place, io2, *buf};
+                return result_type{std::in_place, io2, *buf};
             };
 
             auto extract_status_line = [] (state_type io3, std::string const & s) {
@@ -163,7 +164,7 @@ namespace pstore {
                     return result_type{std::errc::not_supported}; // FIXME: a proper error code.
                 }
                 return result_type{
-                    in_place, io3,
+                    std::in_place, io3,
                     status_line{std::move (http_version), *sc, std::move (reason_phrase)}};
             };
 
@@ -214,7 +215,7 @@ namespace pstore {
                 std::fwrite (subspan.data (), sizeof (char),
                              static_cast<std::size_t> (subspan.size ()), stdout);
             }
-            return return_type{in_place, std::move (io2)};
+            return return_type{std::in_place, std::move (io2)};
         }
 
     } // end namespace http
